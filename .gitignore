@@ -1,0 +1,10 @@
+# Personal / private data — NEVER commit to the public repo
+MY-PRIVATE-habits-backup.json
+*-PRIVATE-*.json
+*.local.json
+momentum-backup-*.json
+
+# junk
+node_modules/
+.DS_Store
+Thumbs.db
