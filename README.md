@@ -4,7 +4,7 @@ A private, offline-first discipline & habit tracker. Single-file web app (vanill
 
 ## Features
 - **Landscape habit matrix** — habits × days, weekday headers, month navigation, sticky header + first column
-- **One-click cells** — empty → ✓ → ✗ → ✓ (right-click to clear); count habits (e.g. cigarettes) increment 0 → 1 → 2…
+- **One-click cells** — empty → ✓ → ✗ → ✓ (right-click to clear); count habits (e.g. coffee cups) increment 0 → 1 → 2…
 - **Grid + Dashboard** views — weekly bars, month heatmap, streak & completion leaderboards
 - Per-habit streaks, weekly goals, color & emoji; add / edit / reorder / archive
 - **Smart Mirror (dark)** + light-grey glass themes
