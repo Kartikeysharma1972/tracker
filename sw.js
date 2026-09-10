@@ -1,9 +1,8 @@
-/* Momentum service worker
-   Strategy:
-   - HTML/navigation  -> network-first  (always get latest app when online, offline fallback)
-   - static assets     -> cache-first    (fast, offline)
-   Bump CACHE on each meaningful release so old caches are purged. */
-const CACHE = "momentum-v2";
+/* Momentum service worker (v5)
+   - navigation + app code (css/js) -> network-first  (always the latest build when online)
+   - other static assets            -> cache-first    (icons, manifest)
+   Bump CACHE on each release so old caches are purged. */
+const CACHE = "momentum-v5";
 const ASSETS = [
   "./",
   "./index.html",
@@ -11,7 +10,23 @@ const ASSETS = [
   "./icon-192.png",
   "./icon-512.png",
   "./apple-touch-icon.png",
-  "./favicon-32.png"
+  "./favicon-32.png",
+  "./assets/css/tokens.css",
+  "./assets/css/base.css",
+  "./assets/css/components.css",
+  "./assets/css/views.css",
+  "./assets/js/core.js",
+  "./assets/js/data.exercises.js",
+  "./assets/js/data.foods.js",
+  "./assets/js/store.js",
+  "./assets/js/nutrition.js",
+  "./assets/js/programs.js",
+  "./assets/js/ui.js",
+  "./assets/js/habits.js",
+  "./assets/js/gym.js",
+  "./assets/js/gym-log.js",
+  "./assets/js/diet.js",
+  "./assets/js/app.js"
 ];
 
 self.addEventListener("install", e => {
@@ -30,20 +45,21 @@ self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
 
+  const url = new URL(req.url);
   const isDoc = req.mode === "navigate" || req.destination === "document";
-  if (isDoc) {
-    // network-first: fresh app when online, cached when offline
+  const isCode = /\.(css|js)$/.test(url.pathname);
+
+  if (isDoc || isCode) {
     e.respondWith(
       fetch(req).then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
         return res;
-      }).catch(() => caches.match(req).then(r => r || caches.match("./index.html")))
+      }).catch(() => caches.match(req).then(r => r || (isDoc ? caches.match("./index.html") : undefined)))
     );
     return;
   }
 
-  // cache-first for static assets
   e.respondWith(
     caches.match(req).then(cached =>
       cached ||
