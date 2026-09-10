@@ -110,6 +110,7 @@ textarea.inp{height:auto;min-height:74px;padding:9px 11px;line-height:1.5;resize
 
 /* ---------------- KPI ---------------- */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:var(--s3);}
+@media(min-width:1180px){.kpis.kpis-4{grid-template-columns:repeat(4,1fr);}}
 .kpi{padding:var(--s3) var(--s4) var(--s4);border-radius:var(--r-md);display:flex;flex-direction:column;gap:2px;transition:transform var(--t-fast);}
 .kpi:hover{transform:translateY(-2px);}
 .kpi .l{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:620;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;}

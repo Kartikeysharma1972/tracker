@@ -57,6 +57,7 @@
     var dues = G.dues();
     var duesAmt = M.sum(dues, function (d) { return +d.m.fee || 0; });
     var risk = G.atRisk(7);
+    var renew = G.expiring(10);
     var prs = G.prsSince(M.keyOf(M.addDays(now, -7)));
     var joinedThisMonth = all.filter(function (m) { return m.joined.slice(0, 7) === ym; }).length;
 
@@ -88,7 +89,7 @@
     var mus = Object.keys(load).map(function (k) { return { k: k, v: Math.round(load[k]) }; }).sort(function (a, b) { return b.v - a.v; }).slice(0, 8);
 
     host.innerHTML =
-      '<div class="kpis">'
+      '<div class="kpis kpis-4">'
       + kpi("users", "Active members", act.length + '<small> / ' + all.length + "</small>", joinedThisMonth + " joined this month", M.pct(act.length, Math.max(all.length, 1)))
       + kpi("checkCircle", "Check-ins today", String(inToday), M.pct(inToday, Math.max(act.length, 1)) + "% of active roster", M.pct(inToday, Math.max(act.length, 1)), "var(--ok)")
       + kpi("activity", "Weekly attendance", M.pct(visits7, Math.max(expect7, 1)) + "<small>%</small>", visits7 + " of " + expect7 + " planned sessions", M.pct(visits7, Math.max(expect7, 1)), M.grade(M.pct(visits7, Math.max(expect7, 1))))
@@ -96,6 +97,7 @@
       + kpi("alert", "Fees pending", String(dues.length), duesAmt ? M.money(duesAmt) + " outstanding" : "all clear", dues.length ? 100 : 0, dues.length ? "var(--no)" : "var(--ok)")
       + kpi("clock", "At risk (7d absent)", String(risk.length), risk.length ? "needs a nudge today" : "everyone is showing up", risk.length ? 100 : 0, risk.length ? "var(--warn)" : "var(--ok)")
       + kpi("award", "PRs this week", String(prs.length), prs.length ? prs[0].member.name.split(" ")[0] + " leads" : "no new records yet", Math.min(100, prs.length * 12), "var(--warn)")
+      + kpi("refresh", "Renewals due (10d)", String(renew.length), renew.length ? M.money(M.sum(renew, function (x) { return +x.m.fee || 0; })) + " to collect" : "nothing expiring", renew.length ? 100 : 0, "var(--info)")
       + "</div>"
 
       + '<div class="pgrid">'
@@ -104,7 +106,7 @@
         + '<div class="donut-lg">' + mix.map(function (x) {
           return '<div class="dl"><i style="background:' + x.color + '"></i><span>' + M.esc(x.label) + "</span><b>" + x.value + "</b></div>";
         }).join("") + "</div></div>")
-      + card("checkCircle", "Today’s floor", tk === M.today() ? "tap a name to check in" : "", rosterHtml(act, tk), "span2")
+      + card("checkCircle", "Today’s floor", "search a name, hit enter, done · grouped by batch", quickBar() + rosterHtml(act, tk), "span2")
       + card("alert", "Needs a nudge", "no visit in 7+ days", riskHtml(risk))
       + card("trend", "Gym tonnage", "last 8 weeks · tonnes lifted", M.areaChart(tons, { color: "#0f766e", min: 0, dots: true }) + weekAxis(8), "span2")
       + card("dumbbell", "Muscle groups trained", "sets this week across the gym", mus.length ? '<div class="muscle-bars">' + mus.map(function (x) {
@@ -112,8 +114,70 @@
         return '<div class="mb"><span class="mn">' + M.esc(M.EXDB.label(x.k)) + '</span><span class="mt"><i style="width:' + (x.v / max) * 100 + "%;background:" + M.EXDB.color(x.k) + '"></i></span><span class="mv">' + x.v + " sets</span></div>";
       }).join("") + "</div>" : M.chartEmpty("Log a workout to see muscle coverage."))
       + card("wallet", "Fees due & overdue", dues.length + " member" + (dues.length === 1 ? "" : "s"), duesHtml(dues), "span2")
+      + card("refresh", "Renewals coming up", "next 10 days", renewHtml(renew))
       + "</div>";
+
+    wireQuick(host, tk);
   };
+
+  /* ---------------- quick check-in ---------------- */
+  function quickBar() {
+    return '<div class="qbar no-print">'
+      + '<div class="search"><span>' + M.icon("search") + '</span>'
+      + '<input id="qcin" placeholder="Quick check-in — type a name or phone, press Enter"></div>'
+      + '<span class="kb">/</span></div><div class="qhits" id="qhits"></div>';
+  }
+  function wireQuick(host, tk) {
+    var inp = M.$("#qcin", host), hits = M.$("#qhits", host);
+    if (!inp) return;
+    var matches = [];
+    function draw() {
+      var q = inp.value.trim().toLowerCase();
+      matches = !q ? [] : G.active().filter(function (m) {
+        return (m.name + " " + (m.phone || "")).toLowerCase().indexOf(q) >= 0;
+      }).slice(0, 6);
+      if (!matches.length) { hits.innerHTML = q ? '<div class="hint" style="padding:4px 2px">No active member matches that.</div>' : ""; return; }
+      hits.innerHTML = matches.map(function (m, i) {
+        var inn = G.isIn(m.id, tk);
+        return '<button class="qhit" data-q="' + m.id + '">' + av(m, "sm")
+          + '<span style="min-width:0;flex:1"><span class="nm">' + M.esc(m.name) + "</span>"
+          + '<span class="sub"> · ' + M.esc(L.batch[m.batch] || "") + "</span></span>"
+          + '<span class="bdg ' + (inn ? "ok" : "") + '">' + (inn ? "already in" : "check in") + "</span>"
+          + (i === 0 ? '<span class="kb">↵</span>' : "") + "</button>";
+      }).join("");
+    }
+    inp.oninput = draw;
+    inp.onkeydown = function (e) {
+      if (e.key === "Enter" && matches.length) {
+        e.preventDefault();
+        doCheck(matches[0]);
+      }
+    };
+    hits.onclick = function (e) {
+      var t = e.target.closest("[data-q]");
+      if (!t) return;
+      e.stopPropagation();
+      var m = G.byId(t.dataset.q);
+      if (m) doCheck(m);
+    };
+    function doCheck(m) {
+      var on = G.toggleIn(m.id, tk);
+      M.toast(m.name.split(" ")[0] + (on ? " checked in" : " check-in removed"), "ok");
+      M.rerender();
+      var again = M.$("#qcin");
+      if (again) again.focus();
+    }
+  }
+  function renewHtml(list) {
+    if (!list.length) return '<div class="note in">Nothing expiring in the next 10 days.</div>';
+    return '<div class="rows">' + list.map(function (x) {
+      return '<div class="row"><span data-open="' + x.m.id + '" style="flex:1;min-width:0;cursor:pointer">'
+        + '<span class="nm" style="display:block">' + M.esc(x.m.name) + "</span>"
+        + '<span class="sub">' + M.esc(L.plan[x.m.plan]) + " · " + M.money(x.m.fee) + "</span></span>"
+        + '<span class="bdg ' + (x.days <= 3 ? "wn" : "") + '">' + (x.days === 0 ? "today" : "in " + x.days + "d") + "</span>"
+        + '<button class="icb sm" data-pay="' + x.m.id + '" title="Record renewal">' + M.icon("wallet") + "</button></div>";
+    }).join("") + "</div>";
+  }
 
   function weekAxis(n) {
     var h = '<div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted-2);margin-top:6px">', i;
@@ -122,12 +186,18 @@
   }
   function rosterHtml(list, tk) {
     if (!list.length) return M.chartEmpty("No active members.");
-    var arr = list.slice().sort(function (a, b) {
-      var ai = G.isIn(a.id, tk) ? 0 : 1, bi = G.isIn(b.id, tk) ? 0 : 1;
-      if (ai !== bi) return ai - bi;
-      return a.name.localeCompare(b.name);
+    var order = Object.keys(L.batch), html = "";
+    order.forEach(function (b) {
+      var arr = list.filter(function (m) { return (m.batch || "flex") === b; }).sort(function (a, b2) { return a.name.localeCompare(b2.name); });
+      if (!arr.length) return;
+      var inN = arr.filter(function (m) { return G.isIn(m.id, tk); }).length;
+      html += '<div class="batch-h"><b>' + M.esc(L.batch[b]) + '</b><i></i><span class="cnt">'
+        + inN + " / " + arr.length + " in</span></div>" + rosterRows(arr, tk);
     });
-    return '<div class="rows" id="rosterBox">' + arr.map(function (m) {
+    return html;
+  }
+  function rosterRows(arr, tk) {
+    return '<div class="rows">' + arr.map(function (m) {
       var inn = G.isIn(m.id, tk);
       return '<div class="row"><span data-open="' + m.id + '" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">'
         + av(m, "sm") + '<span style="min-width:0"><span class="nm" style="display:block">' + M.esc(m.name) + "</span>"
@@ -322,7 +392,7 @@
       + '<button class="btn" data-metric="' + id + '">' + M.icon("scale") + "<span>Add measurement</span></button>"
       + '<button class="btn" data-diet="' + id + '">' + M.icon("utensils") + "<span>Diet plan</span></button>"
       + '<button class="icb" data-edit="' + id + '" title="Edit profile">' + M.icon("edit") + "</button>"
-      + '<button class="icb" data-print="' + id + '" title="Print report">' + M.icon("print") + "</button>"
+      + '<button class="btn" data-report="' + id + '">' + M.icon("print") + "<span>Client report</span></button>"
       + (m.phone ? '<a class="icb" target="_blank" rel="noopener" href="' + M.wa(m.phone, "Hi " + m.name.split(" ")[0] + ", ") + '" title="WhatsApp">' + M.icon("message") + "</a>" : "")
       + "</div></div>"
 
@@ -343,6 +413,7 @@
           + M.areaChart(wvals, { color: "#0f766e", goal: m.targetWeight || null, dots: true })
           + '<div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted-2);margin-top:6px"><span>' + M.fmtD(wser[0].d, "dm") + "</span><span>" + M.fmtD(wser[wser.length - 1].d, "dm") + "</span></div>"
           : M.chartEmpty("Add two weigh-ins to see the trend."))
+        + projHtml(m)
         , "span2",
         '<button class="btn sm no-print" data-metric="' + id + '">' + M.icon("plus") + "<span>Weigh-in</span></button>")
 
@@ -388,6 +459,9 @@
       /* --- volume trend --- */
       + card("trend", "Volume trend", "weekly tonnage · last 10 weeks", volTrend(id), "span2")
 
+      /* --- per-exercise progress --- */
+      + '<div class="glass card span2" id="exProgCard"></div>'
+
       /* --- programme --- */
       + card("layers", "Training programme", m.program ? m.program.name : "not assigned yet",
         m.program ? progHtml(m.program) : M.emptyState("layers", "No programme yet",
@@ -424,19 +498,117 @@
         + (G.payments(id).length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Months</th><th>Mode</th><th class="r">Amount</th><th></th></tr></thead><tbody>'
           + G.payments(id).slice(0, 8).map(function (p) {
             return "<tr><td>" + M.fmtD(p.d) + "</td><td>" + p.months + "</td><td>" + M.esc(L.mode[p.mode] || p.mode || "") + '</td><td class="r">' + M.money(p.amt) + "</td>"
-              + '<td class="r"><button class="icb sm no-print" data-delpay="' + p.id + '" title="Delete">' + M.icon("trash") + "</button></td></tr>";
+              + '<td class="r" style="white-space:nowrap"><button class="icb sm no-print" data-rcpt="' + p.id + '" title="Receipt">' + M.icon("print") + "</button> "
+              + '<button class="icb sm no-print" data-delpay="' + p.id + '" title="Delete">' + M.icon("trash") + "</button></td></tr>";
           }).join("") + "</tbody></table></div>" : '<div class="note">No payments recorded yet.</div>'),
         "span2",
         '<button class="btn sm no-print" data-pay="' + id + '">' + M.icon("plus") + "<span>Record payment</span></button>"
         + (m.phone ? ' <a class="btn sm no-print" target="_blank" rel="noopener" href="' + M.wa(m.phone, feeText(m, st)) + '">' + M.icon("message") + "<span>Remind</span></a>" : ""))
 
+      /* --- dated notes timeline --- */
+      + '<div class="glass card" id="notesCard"></div>'
+
       /* --- notes --- */
-      + card("clipboard", "Notes", "trainer notes & medical flags",
+      + card("clipboard", "Profile notes", "carried on the client report",
         '<div class="note"' + (m.medical ? ' class="note no"' : "") + ">" + (m.medical ? "<b>Medical:</b> " + M.esc(m.medical) + "<br>" : "")
         + (m.notes ? M.esc(m.notes) : "<span style=\"color:var(--muted-2)\">No notes yet — use Edit profile to add training history, injuries or preferences.</span>") + "</div>")
 
       + "</div>";
+
+    drawExProg(host, id, null);
+    drawNotes(host, id);
   };
+
+  /* ---------------- goal projection ---------------- */
+  function projHtml(m) {
+    var p = G.projection(m);
+    if (!p) return "";
+    if (p.done) return '<div class="note in" style="margin-top:12px">' + M.icon("target") + " Target of <b>" + M.n1(p.target) + " kg</b> reached. Set a new target, or switch the goal to maintenance.</div>";
+    if (p.wrongWay) return '<div class="note no" style="margin-top:12px">' + M.icon("alert") + " Moving away from the target: " + M.signed(p.rate, " kg") + "/week while <b>" + M.n1(Math.abs(p.need)) + " kg</b> is still needed the other way. Review intake and attendance before changing the programme.</div>";
+    if (p.stalled) return '<div class="note wn" style="margin-top:12px">' + M.icon("alert") + " Weight has been flat for the last few weeks with <b>" + M.n1(Math.abs(p.need)) + " kg</b> to go. Adjust calories by ~10% or add a session.</div>";
+    if (p.slow) return '<div class="note wn" style="margin-top:12px">' + M.icon("clock") + " At " + M.signed(p.rate, " kg") + "/week this target is more than two years away. Consider a nearer milestone.</div>";
+    return '<div class="note in" style="margin-top:12px">' + M.icon("trend") + " At <b>" + M.signed(p.rate, " kg") + "/week</b>, "
+      + M.esc(m.name.split(" ")[0]) + " reaches <b>" + M.n1(p.target) + " kg</b> in about <b>" + p.weeks
+      + " weeks</b> — around <b>" + M.fmtD(p.eta, "long") + "</b>.</div>";
+  }
+
+  /* ---------------- per-exercise progress ---------------- */
+  function drawExProg(host, id, name) {
+    var box = M.$("#exProgCard", host);
+    if (!box) return;
+    var used = G.exercisesUsed(id);
+    if (!used.length) {
+      box.innerHTML = '<div class="card-h"><div class="ic">' + M.icon("trend") + '</div><div><h3>Exercise progress</h3><span class="sub">load and estimated 1RM over time</span></div></div>'
+        + M.chartEmpty("Log a few sessions and each lift gets its own progress chart.");
+      return;
+    }
+    /* default to the exercise with the most history */
+    if (!name || used.indexOf(name) < 0) {
+      name = used.slice().sort(function (a, b) { return G.exHistory(id, b).length - G.exHistory(id, a).length; })[0];
+    }
+    var h = G.exHistory(id, name);
+    var first = h[0], last = h[h.length - 1];
+    var gain = first && last ? last.e1 - first.e1 : 0;
+    box.innerHTML =
+      '<div class="card-h"><div class="ic">' + M.icon("trend") + '</div><div><h3>Exercise progress</h3>'
+      + '<span class="sub">' + h.length + " session" + (h.length === 1 ? "" : "s") + " logged · top set and estimated 1RM</span></div>"
+      + '<div class="acts"><select class="sel" id="exSel" style="width:auto;max-width:230px">'
+      + used.map(function (n) { return '<option value="' + M.esc(n) + '"' + (n === name ? " selected" : "") + ">" + M.esc(n) + "</option>"; }).join("")
+      + "</select></div></div>"
+      + '<div class="stats" style="margin-bottom:12px">'
+      + sbox(last ? M.n1(last.w) + "<small> kg</small>" : "—", "Latest top set", last ? { cls: "flat-c", txt: last.r + " reps · " + M.fmtD(last.d, "dm") } : null)
+      + sbox(last ? M.n1(last.e1) + "<small> kg</small>" : "—", "Estimated 1RM", first && h.length > 1 ? { cls: gain >= 0 ? "up" : "down", txt: M.signed(gain, " kg") + " since " + M.fmtD(first.d, "dm") } : null)
+      + sbox(String(M.sum(h, function (x) { return x.sets; })), "Total sets")
+      + sbox(Math.round(M.sum(h, function (x) { return x.vol; }) / 1000) + "<small> t</small>", "Total volume")
+      + "</div>"
+      + (h.length > 1
+        ? '<div class="legend"><span><i style="background:#5b5f8f"></i>Estimated 1RM (kg)</span><span><i style="background:#0f766e"></i>Top set load (kg)</span></div>'
+        + M.multiLine([
+          { vals: h.map(function (x) { return x.e1; }), color: "#5b5f8f" },
+          { vals: h.map(function (x) { return x.w; }), color: "#0f766e" }
+        ], { len: h.length, min: 0 })
+        + '<div class="rep-axis" style="margin-top:6px"><span>' + M.fmtD(h[0].d, "dm") + "</span><span>" + M.fmtD(h[h.length - 1].d, "dm") + "</span></div>"
+        : '<div class="note">One session logged so far — the trend line appears from the second one.</div>');
+    var sel = M.$("#exSel", box);
+    if (sel) sel.onchange = function (e) { drawExProg(host, id, e.target.value); };
+  }
+
+  /* ---------------- notes timeline ---------------- */
+  function drawNotes(host, id) {
+    var box = M.$("#notesCard", host);
+    if (!box) return;
+    var notes = G.notes(id);
+    box.innerHTML =
+      '<div class="card-h"><div class="ic">' + M.icon("clipboard") + '</div><div><h3>Session notes</h3>'
+      + '<span class="sub">' + (notes.length ? notes.length + " entries · newest first" : "dated notes for this member") + "</span></div></div>"
+      + '<div class="fld no-print" style="margin-bottom:12px"><div style="display:flex;gap:8px">'
+      + '<input class="inp" id="noteIn" placeholder="e.g. shoulder felt tight on presses — dropped to 3 sets">'
+      + '<button class="btn primary" id="noteAdd" style="flex:none">' + M.icon("plus") + "<span>Add</span></button></div></div>"
+      + (notes.length
+        ? '<div class="tl">' + notes.map(function (n) {
+          return '<div class="tli"><span class="dot"></span><div class="body"><div class="d">' + M.fmtD(n.d, "long") + "</div>"
+            + '<div class="t">' + M.esc(n.t) + "</div></div>"
+            + '<button class="icb sm bare x no-print" data-delnote="' + n.id + '" title="Delete note">' + M.icon("trash") + "</button></div>";
+        }).join("") + "</div>"
+        : '<div class="note">Nothing logged yet. Notes here are dated, appear on the client report and are the fastest way to remember what happened last week.</div>');
+    var inp = M.$("#noteIn", box), add = M.$("#noteAdd", box);
+    function save() {
+      var v = inp.value.trim();
+      if (!v) { M.toast("Type the note first", "no"); return; }
+      G.addNote(id, v);
+      inp.value = "";
+      drawNotes(host, id);
+      M.toast("Note added", "ok");
+    }
+    add.onclick = save;
+    inp.onkeydown = function (e) { if (e.key === "Enter") save(); };
+    box.onclick = function (e) {
+      var t = e.target.closest("[data-delnote]");
+      if (!t) return;
+      G.delNote(id, t.dataset.delnote);
+      drawNotes(host, id);
+    };
+  }
 
   function rateFlag(rate, m, wt) {
     var pctW = (Math.abs(rate) / wt) * 100;
@@ -571,7 +743,8 @@
       + '<div class="divider"></div>'
       + '<div class="grid3">' + M.f.sel("diet", "Diet preference", m.diet, M.f.dictOpts(L.diet))
       + M.f.num("meals", "Meals per day", m.meals, { min: 3, max: 6 })
-      + M.f.sel("status", "Membership status", m.status, M.f.dictOpts(L.status)) + "</div>"
+      + M.f.sel("batch", "Batch / slot", m.batch || "flex", M.f.dictOpts(L.batch)) + "</div>"
+      + '<div class="grid3">' + M.f.sel("status", "Membership status", m.status, M.f.dictOpts(L.status)) + "</div>"
       + M.f.checks("allergies", "Avoid / allergies", m.allergies, M.FOODS.ALLERGENS)
       + '<div class="divider"></div>'
       + '<div class="grid3">' + M.f.sel("plan", "Plan", m.plan, M.f.dictOpts(L.plan))
@@ -584,6 +757,12 @@
       label: isNew ? "Add member" : "Save changes", cls: "primary", icon: "check", fn: function (b) {
         var v = M.formVals(b);
         if (!v.name) { M.toast("Name is required", "no"); return; }
+        if (v.phone) {
+          var clash = G.all().filter(function (x) {
+            return x.id !== id && x.phone && x.phone.replace(/\D/g, "") === String(v.phone).replace(/\D/g, "");
+          })[0];
+          if (clash) { M.toast(clash.name + " already has that number", "no"); return; }
+        }
         v.height = +v.height || 170; v.startWeight = +v.startWeight || 70;
         v.meals = M.clamp(+v.meals || 4, 3, 6); v.daysPerWeek = M.clamp(+v.daysPerWeek || 4, 2, 6);
         v.fee = +v.fee || 0; v.targetWeight = +v.targetWeight || 0;
@@ -600,11 +779,11 @@
     }];
     if (!isNew) {
       foot.unshift({
-        label: "Delete", cls: "danger", icon: "trash", fn: function () {
-          M.confirm("Delete " + m.name + "?", "This removes their profile, attendance, workouts, measurements and payments. It cannot be undone.", "Delete permanently", true)
+        label: "Archive", cls: "danger", icon: "trash", fn: function () {
+          M.confirm("Archive " + m.name + "?", "They come off the roster but every workout, weigh-in and payment is kept. You can restore them from Settings → Archived members.", "Archive")
             .then(function (ok) {
               if (!ok) return;
-              G.remove(id); M.closeModal(); M.go("#/members"); M.toast("Member deleted", "ok");
+              G.archive(id); M.closeModal(); M.go("#/members"); M.toast("Archived — restore from Settings", "ok");
             });
         }
       });
@@ -662,8 +841,9 @@
       footer: [{
         label: "Save payment", cls: "primary", icon: "wallet", fn: function (b) {
           var v = M.formVals(b);
-          G.addPayment({ mid: mid, d: v.d || M.today(), amt: +v.amt || 0, months: M.clamp(+v.months || 1, 1, 24), mode: v.mode, note: v.note });
-          M.closeModal(); M.rerender(); M.toast("Payment recorded", "ok");
+          var pay = G.addPayment({ mid: mid, d: v.d || M.today(), amt: +v.amt || 0, months: M.clamp(+v.months || 1, 1, 24), mode: v.mode, note: v.note });
+          M.closeModal(); M.rerender();
+          M.toast("Payment recorded · " + pay.rcpt, "ok", "Receipt", function () { M.receipt(pay.id); });
         }
       }]
     });
@@ -671,9 +851,7 @@
 
   /* ---------------- printable report ---------------- */
   M.memberReport = function (mid) {
-    var m = G.byId(mid); if (!m) return;
-    M.go("#/member/" + mid);
-    setTimeout(function () { window.print(); }, 350);
+    if (G.byId(mid)) M.go("#/report/" + mid);
   };
 
   /* ---------------- delegated actions ---------------- */
@@ -699,6 +877,8 @@
       return;
     }
     if ((t = e.target.closest("[data-print]"))) { e.stopPropagation(); M.memberReport(t.dataset.print); return; }
+    if ((t = e.target.closest("[data-report]"))) { e.stopPropagation(); M.go("#/report/" + t.dataset.report); return; }
+    if ((t = e.target.closest("[data-rcpt]"))) { e.stopPropagation(); M.receipt(t.dataset.rcpt); return; }
     if ((t = e.target.closest("[data-open]"))) { M.go("#/member/" + t.dataset.open); return; }
     if ((t = e.target.closest("[data-log]"))) { e.stopPropagation(); M.go("#/log/" + t.dataset.log); return; }
     if ((t = e.target.closest("[data-diet]"))) { e.stopPropagation(); M.go("#/diet/" + t.dataset.diet); return; }

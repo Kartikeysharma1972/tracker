@@ -70,6 +70,8 @@
       + '<div class="grid2" style="gap:8px"><div class="fld"><label>Minutes</label><input class="inp" type="number" id="sDur" value="' + (draft.dur || "") + '" min="5" max="240"></div>'
       + '<div class="fld"><label>RPE</label><input class="inp" type="number" id="sRpe" value="' + (draft.rpe || "") + '" min="1" max="10"></div></div>'
       + "</div>"
+      + (m.medical ? '<div class="note no" style="margin-bottom:12px">' + M.icon("alert")
+        + " <b>Medical flag:</b> " + M.esc(m.medical) + " — swap any painful movement for a pain-free variation of the same pattern.</div>" : "")
       + '<div id="exWrap"></div>'
       + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'
       + '<button class="btn" id="autoFill">' + M.icon("zap") + "<span>Auto-fill from programme</span></button>"
@@ -405,23 +407,32 @@
           + '<span class="bdg ' + x.st.cls + '">' + M.esc(x.st.label) + "</span>"
           + '<button class="icb sm" data-pay="' + x.m.id + '" title="Record payment">' + M.icon("plus") + "</button></div>";
       }).join("") + "</div>" : '<div class="note in">Everything is collected. Nothing pending.</div>') + "</div>"
+      + '<div class="glass card"><div class="card-h"><div class="ic">' + M.icon("refresh") + '</div><div><h3>Renewals coming up</h3><span class="sub">next 14 days</span></div></div>'
+      + (G.expiring(14).length ? '<div class="rows">' + G.expiring(14).map(function (x) {
+        return '<div class="row"><span data-open="' + x.m.id + '" style="flex:1;min-width:0;cursor:pointer"><span class="nm" style="display:block">' + M.esc(x.m.name) + "</span>"
+          + '<span class="sub">' + M.esc(L.plan[x.m.plan]) + " · " + M.money(x.m.fee) + " · till " + M.fmtD(G.paidUntil(x.m), "dm") + "</span></span>"
+          + '<span class="bdg ' + (x.days <= 3 ? "wn" : "") + '">' + (x.days === 0 ? "today" : "in " + x.days + "d") + "</span>"
+          + '<button class="icb sm" data-pay="' + x.m.id + '" title="Record renewal">' + M.icon("plus") + "</button></div>";
+      }).join("") + "</div>" : '<div class="note in">No memberships expiring in the next two weeks.</div>') + "</div>"
       + '<div class="glass card full"><div class="card-h"><div class="ic">' + M.icon("list") + '</div><div><h3>Payment history</h3><span class="sub">' + pays.length + " records</span></div>"
       + '<div class="acts"><button class="btn sm" id="expPay">' + M.icon("download") + "<span>CSV</span></button></div></div>"
-      + (pays.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Date</th><th>Member</th><th>Plan</th><th>Months</th><th>Mode</th><th class="r">Amount</th><th></th></tr></thead><tbody>'
+      + (pays.length ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Receipt</th><th>Date</th><th>Member</th><th>Plan</th><th>Months</th><th>Mode</th><th class="r">Amount</th><th></th></tr></thead><tbody>'
         + pays.slice(0, 60).map(function (p) {
           var m = G.byId(p.mid) || { name: "(deleted)", plan: "monthly" };
-          return "<tr><td>" + M.fmtD(p.d) + '</td><td><span class="nm">' + M.esc(m.name) + "</span></td><td>" + M.esc(L.plan[m.plan] || "") + "</td>"
+          return '<tr><td><span class="nm">' + M.esc(p.rcpt || "—") + "</span></td><td>" + M.fmtD(p.d)
+            + '</td><td><span class="nm">' + M.esc(m.name) + "</span></td><td>" + M.esc(L.plan[m.plan] || "") + "</td>"
             + "<td>" + p.months + "</td><td>" + M.esc(L.mode[p.mode] || p.mode || "") + '</td><td class="r">' + M.money(p.amt) + "</td>"
-            + '<td class="r"><button class="icb sm" data-delpay="' + p.id + '" title="Delete">' + M.icon("trash") + "</button></td></tr>";
+            + '<td class="r" style="white-space:nowrap"><button class="icb sm" data-rcpt="' + p.id + '" title="Receipt">' + M.icon("print") + "</button> "
+            + '<button class="icb sm" data-delpay="' + p.id + '" title="Delete">' + M.icon("trash") + "</button></td></tr>";
         }).join("") + "</tbody></table></div>" : '<div class="note">No payments recorded yet. Use <b>Record payment</b> on a member profile.</div>')
       + "</div></div>";
 
     var ex = M.$("#expPay", host);
     if (ex) ex.onclick = function () {
-      var rows = [["date", "member", "phone", "plan", "months", "mode", "amount", "note"]];
+      var rows = [["receipt", "date", "member", "phone", "plan", "months", "mode", "amount", "note"]];
       pays.forEach(function (p) {
         var m = G.byId(p.mid) || {};
-        rows.push([p.d, m.name || "", m.phone || "", m.plan || "", p.months, p.mode, p.amt, p.note || ""]);
+        rows.push([p.rcpt || "", p.d, m.name || "", m.phone || "", m.plan || "", p.months, p.mode, p.amt, p.note || ""]);
       });
       M.download(rows.map(function (r) { return r.map(M.csvCell).join(","); }).join("\n"), "momentum-payments-" + M.today() + ".csv", "text/csv");
       M.toast("Payments exported", "ok");

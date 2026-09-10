@@ -152,6 +152,7 @@
       + '<div class="acts no-print">'
       + '<button class="btn sm" id="dWa">' + M.icon("message") + "<span>Send</span></button>"
       + '<button class="btn sm" id="dCopy">' + M.icon("copy") + "<span>Copy</span></button>"
+      + '<button class="btn sm" id="dShop">' + M.icon("list") + "<span>Shopping list</span></button>"
       + '<button class="btn sm" id="dCsv">' + M.icon("download") + "<span>CSV</span></button>"
       + '<button class="icb sm" id="dPrint" title="Print">' + M.icon("print") + "</button>"
       + "</div></div>"
@@ -247,7 +248,64 @@
       M.toast("Plan exported", "ok");
     };
     M.$("#dPrint", box).onclick = function () { window.print(); };
+    M.$("#dShop", box).onclick = function () { shoppingList(m, plan); };
   }
+  /* aggregate a week of meals into a buy-list, grouped by aisle */
+  function shoppingList(m, pl) {
+    var agg = {};
+    pl.days.forEach(function (d) {
+      d.meals.forEach(function (ml) {
+        ml.items.forEach(function (it) {
+          var f = M.FOODS.find(it.name);
+          if (!f) return;
+          var k = it.name;
+          agg[k] = agg[k] || { f: f, amount: 0 };
+          agg[k].amount += it.amount;
+        });
+      });
+    });
+    var GROUPS = { p: "Protein", c: "Grains & carbs", v: "Vegetables", f: "Fats, nuts & seeds", fr: "Fruit", d: "Drinks", x: "Extras" };
+    var byRole = {};
+    Object.keys(agg).forEach(function (k) {
+      var r = agg[k].f.r;
+      (byRole[r] = byRole[r] || []).push(agg[k]);
+    });
+    var order = ["p", "c", "v", "fr", "f", "d", "x"], html = "", text = [];
+    text.push("*Shopping list — " + (m.name || "client") + "* (7 days)");
+    order.forEach(function (r) {
+      var list = byRole[r];
+      if (!list || !list.length) return;
+      list.sort(function (a, b) { return a.f.n.localeCompare(b.f.n); });
+      html += '<div class="rep-sect" style="margin-bottom:14px"><h3>' + M.esc(GROUPS[r] || r) + "</h3>"
+        + '<table class="rep-tbl"><tbody>' + list.map(function (x) {
+          var amt = x.amount;
+          var pretty = M.FOODS.qty(x.f, Math.round(amt * 10) / 10);
+          /* grams and millilitres read better in kg / litre once they are big */
+          if ((x.f.bu === "g" || x.f.bu === "ml") && amt >= 1000) {
+            pretty = M.n1(amt / 1000) + (x.f.bu === "g" ? " kg" : " L");
+          }
+          text.push("• " + x.f.n + " — " + pretty);
+          return "<tr><td>" + M.esc(x.f.n) + '</td><td class="r"><b>' + M.esc(pretty) + "</b></td></tr>";
+        }).join("") + "</tbody></table></div>";
+      text.push("");
+    });
+    M.modal({
+      title: "Weekly shopping list", wide: true,
+      sub: "Everything in the 7-day plan, added up. Quantities are as-purchased for the whole week.",
+      body: '<div id="shopSheet">' + html + '<div class="rep-note">Buy fresh vegetables and fruit twice in the week rather than all at once.</div></div>',
+      footer: [
+        { label: "Copy", icon: "copy", fn: function () { M.copy(text.join("\n")).then(function () { M.toast("Shopping list copied", "ok"); }); } },
+        {
+          label: "Send", icon: "message", fn: function () {
+            if (m.phone) window.open(M.wa(m.phone, text.join("\n")), "_blank");
+            else M.copy(text.join("\n")).then(function () { M.toast("Copied — no phone on file", "ok"); });
+          }
+        },
+        { label: "Print", cls: "primary", icon: "print", fn: function () { M.printOnly("shopSheet"); } }
+      ]
+    });
+  }
+
   function meter(label, val, target, unit) {
     var pc = target ? Math.round((val / target) * 100) : 0;
     var col = pc >= 92 && pc <= 108 ? "var(--ok)" : pc >= 80 && pc <= 120 ? "var(--warn)" : "var(--no)";

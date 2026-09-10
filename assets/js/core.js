@@ -88,7 +88,7 @@
       if (rest) parts.unshift(rest);
       out = parts.join(",") + "," + last3;
     } else out = s;
-    return "₹" + out;
+    return ((M.store && M.store.settings && M.store.settings.currency) || "₹") + out;
   };
   M.signed = function (v, unit, dp) {
     var n = dp === 0 ? Math.round(v) : Math.round(v * 10) / 10;

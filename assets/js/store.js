@@ -41,13 +41,16 @@
   function freshGym() {
     return {
       profile: { name: "", trainer: "", phone: "", city: "", currency: "₹", capacity: 0 },
-      members: [], attendance: {}, metrics: {}, sessions: [], payments: []
+      members: [], attendance: {}, metrics: {}, sessions: [], payments: [], rcptSeq: 1
     };
   }
   function fresh() {
     return {
       schema: SCHEMA,
-      settings: { name: "You", theme: "dark", pin: null, unit: "kg", route: "#/today", modules: { gym: true } },
+      settings: {
+      name: "You", theme: "dark", pin: null, unit: "kg", currency: "₹",
+      route: "#/today", modules: { gym: true }, lastBackup: null, onboarded: false
+    },
       habits: JSON.parse(JSON.stringify(DEFAULT_HABITS)),
       logs: {}, mind: {}, gym: freshGym()
     };
@@ -64,6 +67,9 @@
     if (!s.route) s.route = "#/today";
     if (!s.modules) s.modules = { gym: true };
     if (s.modules.gym === undefined) s.modules.gym = true;
+    if (!s.currency) s.currency = "₹";
+    if (s.lastBackup === undefined) s.lastBackup = null;
+    if (s.onboarded === undefined) s.onboarded = false;
     delete s.view; delete s.pinAsked; delete s._mirror;
 
     d.habits = (Array.isArray(d.habits) && d.habits.length ? d.habits : JSON.parse(JSON.stringify(DEFAULT_HABITS))).map(function (h) {
@@ -84,6 +90,7 @@
     g.metrics = g.metrics && typeof g.metrics === "object" ? g.metrics : {};
     g.sessions = Array.isArray(g.sessions) ? g.sessions : [];
     g.payments = Array.isArray(g.payments) ? g.payments : [];
+    if (!g.rcptSeq) g.rcptSeq = g.payments.length + 1;
     d.schema = SCHEMA;
     return d;
   }
@@ -94,7 +101,8 @@
       id: M.uid("m"), name: "Member", phone: "", email: "", sex: "m", dob: "",
       joined: M.today(), level: "beg", goal: "fitness", height: 170, startWeight: 70, targetWeight: 0,
       activity: "light", diet: "veg", allergies: [], meals: 4, daysPerWeek: 4,
-      plan: "monthly", fee: 1200, notes: "", medical: "", trainer: "", status: "active",
+      plan: "monthly", fee: 1200, notes: "", notesLog: [], medical: "", trainer: "", status: "active",
+      batch: "flex",
       program: null, dietPlan: null, archived: false
     }, m || {});
   }
@@ -117,6 +125,49 @@
     catch (e) { if (M.toast) M.toast("Save failed — storage full?", "no"); }
   };
   M.replaceStore = function (obj) { M.store = migrate(obj); M.saveNow(); };
+  /* merge a backup into the current data instead of replacing it */
+  M.mergeStore = function (obj) {
+    var inc = migrate(JSON.parse(JSON.stringify(obj)));
+    var cur = M.store, added = { habits: 0, days: 0, members: 0, sessions: 0, payments: 0, metrics: 0 };
+    var hIds = {};
+    cur.habits.forEach(function (h) { hIds[h.id] = 1; });
+    inc.habits.forEach(function (h) { if (!hIds[h.id]) { cur.habits.push(h); added.habits++; } });
+    Object.keys(inc.logs).forEach(function (dk) {
+      if (!cur.logs[dk]) { cur.logs[dk] = inc.logs[dk]; added.days++; return; }
+      Object.keys(inc.logs[dk]).forEach(function (hid) {
+        if (cur.logs[dk][hid] == null) cur.logs[dk][hid] = inc.logs[dk][hid];
+      });
+    });
+    Object.keys(inc.mind).forEach(function (dk) {
+      if (!cur.mind[dk]) { cur.mind[dk] = inc.mind[dk]; return; }
+      M.MIND_KEYS.forEach(function (k) {
+        if (cur.mind[dk][k] == null && inc.mind[dk][k] != null) cur.mind[dk][k] = inc.mind[dk][k];
+      });
+    });
+    if (!cur.gym.profile.name && inc.gym.profile.name) cur.gym.profile = inc.gym.profile;
+    var mIds = {};
+    cur.gym.members.forEach(function (m) { mIds[m.id] = 1; });
+    inc.gym.members.forEach(function (m) { if (!mIds[m.id]) { cur.gym.members.push(m); added.members++; } });
+    Object.keys(inc.gym.attendance).forEach(function (mid) {
+      var r = cur.gym.attendance[mid] || (cur.gym.attendance[mid] = {});
+      Object.keys(inc.gym.attendance[mid]).forEach(function (dk) { r[dk] = 1; });
+    });
+    Object.keys(inc.gym.metrics).forEach(function (mid) {
+      var arr = cur.gym.metrics[mid] || (cur.gym.metrics[mid] = []);
+      var have = {};
+      arr.forEach(function (r) { have[r.d] = 1; });
+      inc.gym.metrics[mid].forEach(function (r) { if (!have[r.d]) { arr.push(r); added.metrics++; } });
+    });
+    var sIds = {};
+    cur.gym.sessions.forEach(function (x) { sIds[x.id] = 1; });
+    inc.gym.sessions.forEach(function (x) { if (!sIds[x.id]) { cur.gym.sessions.push(x); added.sessions++; } });
+    var pIds = {};
+    cur.gym.payments.forEach(function (x) { pIds[x.id] = 1; });
+    inc.gym.payments.forEach(function (x) { if (!pIds[x.id]) { cur.gym.payments.push(x); added.payments++; } });
+    cur.gym.rcptSeq = Math.max(cur.gym.rcptSeq || 1, inc.gym.rcptSeq || 1);
+    M.saveNow();
+    return added;
+  };
   M.KEY = KEY;
 
   /* ============================================================
@@ -258,6 +309,31 @@
     delete g.attendance[id]; delete g.metrics[id];
     g.sessions = g.sessions.filter(function (s) { return s.mid !== id; });
     g.payments = g.payments.filter(function (p) { return p.mid !== id; });
+    M.save();
+  };
+
+  G.archive = function (id) { var m = G.byId(id); if (m) { m.archived = true; M.save(); } };
+  G.restore = function (id) {
+    var m = M.store.gym.members.filter(function (x) { return x.id === id; })[0];
+    if (m) { m.archived = false; M.save(); }
+  };
+  G.trash = function () { return M.store.gym.members.filter(function (m) { return m.archived; }); };
+
+  /* ---- dated trainer notes ---- */
+  G.notes = function (mid) {
+    var m = G.byId(mid);
+    return m && Array.isArray(m.notesLog) ? m.notesLog.slice().sort(function (a, b) { return a.d < b.d ? 1 : -1; }) : [];
+  };
+  G.addNote = function (mid, text) {
+    var m = G.byId(mid); if (!m || !text) return null;
+    if (!Array.isArray(m.notesLog)) m.notesLog = [];
+    var n = { id: M.uid("n"), d: M.today(), t: text };
+    m.notesLog.push(n); M.save();
+    return n;
+  };
+  G.delNote = function (mid, nid) {
+    var m = G.byId(mid); if (!m || !Array.isArray(m.notesLog)) return;
+    m.notesLog = m.notesLog.filter(function (n) { return n.id !== nid; });
     M.save();
   };
 
@@ -474,6 +550,87 @@
     return { w: +top.w, r: (+top.r || 8) + 1, why: "add a rep" };
   };
 
+  /* per-exercise history: top set, best e1RM and volume per session */
+  G.exHistory = function (mid, name) {
+    var out = [];
+    G.sessions(mid).slice().reverse().forEach(function (s) {
+      (s.ex || []).forEach(function (e) {
+        if (e.name !== name) return;
+        var sets = (e.sets || []).filter(function (x) { return +x.w || +x.r; });
+        if (!sets.length) return;
+        var best = sets.slice().sort(function (a, b) { return G.e1rm(b.w, b.r) - G.e1rm(a.w, a.r); })[0];
+        out.push({
+          d: s.d, w: +best.w || 0, r: +best.r || 0, e1: G.e1rm(best.w, best.r),
+          vol: Math.round(M.sum(sets, function (x) { return (+x.w || 0) * (+x.r || 0); })),
+          sets: sets.length
+        });
+      });
+    });
+    return out;
+  };
+  G.exercisesUsed = function (mid) {
+    var seen = {}, out = [];
+    G.sessions(mid).forEach(function (s) {
+      (s.ex || []).forEach(function (e) { if (!seen[e.name]) { seen[e.name] = 1; out.push(e.name); } });
+    });
+    return out.sort();
+  };
+
+  /* goal projection from the recent rate of change */
+  G.projection = function (m) {
+    var target = +m.targetWeight || 0;
+    if (!target) return null;
+    var cur = G.weight(m), rate = G.weeklyRate(m.id, 6);
+    var need = target - cur;
+    if (Math.abs(need) < .3) return { done: true, cur: cur, target: target, rate: rate };
+    if (rate == null || Math.abs(rate) < .05) return { stalled: true, cur: cur, target: target, need: need, rate: rate };
+    if ((need < 0 && rate > 0) || (need > 0 && rate < 0)) return { wrongWay: true, cur: cur, target: target, need: need, rate: rate };
+    var weeks = Math.abs(need / rate);
+    if (weeks > 130) return { slow: true, cur: cur, target: target, need: need, rate: rate };
+    return {
+      cur: cur, target: target, need: need, rate: rate,
+      weeks: Math.round(weeks * 10) / 10,
+      eta: M.keyOf(M.addDays(new Date(), Math.round(weeks * 7)))
+    };
+  };
+
+  /* memberships expiring inside n days (renewal pipeline) */
+  G.expiring = function (days) {
+    return G.active().map(function (m) { return { m: m, days: G.dueDays(m) }; })
+      .filter(function (x) { return x.days >= 0 && x.days <= days; })
+      .sort(function (a, b) { return a.days - b.days; });
+  };
+
+  /* month-on-month business numbers: ym = "YYYY-MM" */
+  G.monthStats = function (ym) {
+    var all = M.store.gym.members.filter(function (m) { return !m.archived; });
+    var joined = all.filter(function (m) { return String(m.joined).slice(0, 7) === ym; });
+    var start = ym + "-01";
+    var end = M.keyOf(new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0));
+    var upto = end > M.today() ? M.today() : end;
+    var roster = all.filter(function (m) { return m.joined <= end; });
+    var visits = 0, expect = 0;
+    roster.forEach(function (m) {
+      visits += G.visitsIn(m.id, start, end).length;
+      var from = m.joined > start ? m.joined : start;
+      var span = Math.max(1, M.dayDiff(from, upto) + 1);
+      expect += Math.max(1, Math.round((span / 7) * (m.daysPerWeek || 4)));
+    });
+    var left = all.filter(function (m) {
+      if (m.status === "active") return false;
+      var lv = G.lastVisit(m.id);
+      return lv ? String(lv).slice(0, 7) === ym : String(m.joined).slice(0, 7) === ym;
+    });
+    return {
+      ym: ym, revenue: G.revenue(ym), joined: joined.length, left: left.length,
+      roster: roster.length, visits: visits,
+      attendance: expect ? Math.round((visits / expect) * 100) : 0,
+      churn: roster.length ? Math.round((left.length / roster.length) * 100) : 0,
+      sessions: G.sessionsIn(null, start, end).length,
+      volume: Math.round(M.sum(G.sessionsIn(null, start, end), function (x) { return G.sessionVolume(x); }))
+    };
+  };
+
   /* ---- fees ---- */
   var PLAN_MONTHS = { monthly: 1, quarterly: 3, halfyearly: 6, annual: 12 };
   M.PLAN_MONTHS = PLAN_MONTHS;
@@ -483,10 +640,17 @@
   };
   G.addPayment = function (p) {
     p.id = p.id || M.uid("p");
+    if (!p.rcpt) {
+      var g = M.store.gym;
+      g.rcptSeq = g.rcptSeq || 1;
+      p.rcpt = "R" + String(new Date().getFullYear()).slice(2) + "-" + String(g.rcptSeq).padStart(4, "0");
+      g.rcptSeq++;
+    }
     M.store.gym.payments.push(p);
     M.save();
     return p;
   };
+  G.payment = function (id) { return M.store.gym.payments.filter(function (p) { return p.id === id; })[0]; };
   G.delPayment = function (id) {
     M.store.gym.payments = M.store.gym.payments.filter(function (p) { return p.id !== id; });
     M.save();
@@ -525,6 +689,7 @@
     plan: { monthly: "Monthly", quarterly: "Quarterly", halfyearly: "6 months", annual: "Annual" },
     status: { active: "Active", paused: "On hold", left: "Left" },
     mode: { upi: "UPI", cash: "Cash", card: "Card", bank: "Bank transfer" },
+    batch: { m6: "Morning 6-7", m7: "Morning 7-8", m8: "Morning 8-9", e5: "Evening 5-6", e6: "Evening 6-7", e7: "Evening 7-8", flex: "Flexible timing" },
     split: { push: "Push", pull: "Pull", legs: "Legs", upper: "Upper body", lower: "Lower body", full: "Full body", chestback: "Chest + Back", armsshoulders: "Arms + Shoulders", cardio: "Cardio / Conditioning", core: "Core" }
   };
 
@@ -543,7 +708,12 @@
     var rnd = M.rng("momentum-demo-v1");
     var today = new Date();
 
-    g.profile = { name: "Iron Yard Fitness", trainer: M.store.settings.name || "Coach", phone: "", city: "", currency: "₹", capacity: 60 };
+    /* never overwrite a real gym profile with demo branding */
+    if (!g.profile.name) {
+      g.profile.name = "Iron Yard Fitness";
+      g.profile.capacity = g.profile.capacity || 60;
+    }
+    if (!g.profile.trainer) g.profile.trainer = M.store.settings.name || "Coach";
 
     names.forEach(function (nm, i) {
       var sex = /a$|i$|Sneha|Priya|Meera|Fatima|Ananya|Ritu/.test(nm.split(" ")[0]) && i % 2 === 1 ? "f" : (i % 3 === 1 ? "f" : "m");

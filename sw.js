@@ -2,7 +2,7 @@
    - navigation + app code (css/js) -> network-first  (always the latest build when online)
    - other static assets            -> cache-first    (icons, manifest)
    Bump CACHE on each release so old caches are purged. */
-const CACHE = "momentum-v5";
+const CACHE = "momentum-v6";
 const ASSETS = [
   "./",
   "./index.html",
@@ -26,6 +26,7 @@ const ASSETS = [
   "./assets/js/gym.js",
   "./assets/js/gym-log.js",
   "./assets/js/diet.js",
+  "./assets/js/report.js",
   "./assets/js/app.js"
 ];
 

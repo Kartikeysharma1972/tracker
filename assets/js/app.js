@@ -5,7 +5,7 @@
   "use strict";
   var M = w.M, H = M.H, G = M.G, L = M.LBL;
   var VIEWS = (M.VIEWS = M.VIEWS || {});
-  var VERSION = "5.0";
+  var VERSION = "6.0";
 
   var NAV = [
     {
@@ -23,7 +23,8 @@
         { r: "#/attendance", i: "calendar", t: "Attendance" },
         { r: "#/programs", i: "layers", t: "Programmes" },
         { r: "#/diet", i: "utensils", t: "Diet planner" },
-        { r: "#/payments", i: "wallet", t: "Payments" }
+        { r: "#/payments", i: "wallet", t: "Payments" },
+        { r: "#/business", i: "trend", t: "Business report" }
       ]
     }
   ];
@@ -52,6 +53,8 @@
     programs: ["Programmes", function () { return "auto-built splits per member"; }],
     diet: ["Diet planner", function () { return "calories, macros and Indian meal plans"; }],
     payments: ["Payments", function () { return "fees, dues and collection"; }],
+    business: ["Business report", function () { return "revenue, retention and churn month by month"; }],
+    report: ["Client report", function () { return "printable, brandable progress report"; }],
     settings: ["Settings", function () { return "data, privacy and preferences"; }]
   };
 
@@ -65,7 +68,7 @@
     var host = M.$("#view");
     host.innerHTML = "";
     host.onclick = null;
-    if (rt.name === "member" && !rt.arg) { M.go("#/members"); return; }
+    if ((rt.name === "member" || rt.name === "report") && !rt.arg) { M.go("#/members"); return; }
     VIEWS[rt.name](host, rt.arg);
     M.save();
     if (w.innerWidth <= 820) closeNav();
@@ -98,9 +101,12 @@
   function renderTop(rt) {
     var t = TITLES[rt.name] || ["Momentum", function () { return ""; }];
     var title = t[0], sub = t[1]();
-    if (rt.name === "member" && rt.arg) {
+    if ((rt.name === "member" || rt.name === "report") && rt.arg) {
       var m = G.byId(rt.arg);
-      if (m) { title = m.name; sub = L.goal[m.goal] + " · " + L.level[m.level] + " · joined " + M.fmtD(m.joined); }
+      if (m) {
+        title = rt.name === "report" ? m.name + " · report" : m.name;
+        sub = L.goal[m.goal] + " · " + L.level[m.level] + " · joined " + M.fmtD(m.joined);
+      }
     }
     var acts = "";
     if (rt.name === "grid") {
@@ -109,7 +115,7 @@
     if (rt.name === "today" || rt.name === "grid" || rt.name === "insights") {
       acts += '<button class="btn primary" data-act="addhabit">' + M.icon("plus") + "<span>Habit</span></button>";
     }
-    if (["gym", "members", "member", "attendance", "programs", "payments", "log", "diet"].indexOf(rt.name) >= 0) {
+    if (["gym", "members", "member", "attendance", "programs", "payments", "log", "diet", "business"].indexOf(rt.name) >= 0) {
       acts += '<button class="btn primary" data-act="addmember">' + M.icon("plus") + "<span>Member</span></button>";
     }
     acts += '<button class="icb" id="themeBtn" title="Switch theme">' + M.icon(M.store.settings.theme === "dark" ? "sun" : "moon") + "</button>";
@@ -194,7 +200,11 @@
         + '<button class="btn" id="impBtn">' + M.icon("upload") + "<span>Import a backup</span></button>"
         + '<input type="file" id="impFile" accept="application/json" class="hidden">'
         + "</div>"
-        + '<div class="note" style="margin-top:10px">Storage in use: <b>' + used + " KB</b>. Nothing is uploaded anywhere — clearing browser data deletes it, so keep a backup.</div>")
+        + '<div class="note' + (backupAge() > 7 ? " wn" : "") + '" style="margin-top:10px">'
+        + "Storage in use: <b>" + used + " KB</b> · last backup: <b>"
+        + (s.lastBackup ? M.fmtD(s.lastBackup, "long") + " (" + M.ago(s.lastBackup) + ")" : "never")
+        + "</b>. Nothing is uploaded anywhere — clearing browser data deletes it, so download a backup weekly.</div>"
+        + '<label class="chk" style="margin-top:10px"><input type="checkbox" id="impMerge"><span>Merge on import instead of replacing everything</span></label>')
       + sect("play", "Demo data", "for showing the product to a gym",
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'
         + '<button class="btn primary" data-act="demo">' + M.icon("layers") + "<span>" + (M.hasDemo() ? "Reload demo gym" : "Load demo gym") + "</span></button>"
@@ -212,11 +222,20 @@
           return '<div class="row"><span style="font-size:15px;width:20px">' + h.e + '</span><span class="nm" style="flex:1">' + M.esc(h.n) + "</span>"
             + '<button class="btn sm" data-restore="' + h.id + '">' + M.icon("refresh") + "<span>Restore</span></button></div>";
         }).join("") + "</div>" : '<div class="note">Nothing archived.</div>')
+      + sect("users", "Archived members", G.trash().length + " archived",
+        G.trash().length ? '<div class="rows">' + G.trash().map(function (m) {
+          return '<div class="row">' + M.gymAv(m, "sm") + '<span style="flex:1;min-width:0"><span class="nm" style="display:block">' + M.esc(m.name) + "</span>"
+            + '<span class="sub">' + M.esc(L.goal[m.goal]) + " · joined " + M.fmtD(m.joined) + " · " + G.visits(m.id).length + " visits kept</span></span>"
+            + '<button class="btn sm" data-unarch="' + m.id + '">' + M.icon("refresh") + "<span>Restore</span></button>"
+            + '<button class="icb sm" data-purge="' + m.id + '" title="Delete permanently">' + M.icon("trash") + "</button></div>";
+        }).join("") + "</div>" : '<div class="note">Nothing archived. Archiving a member keeps all their history but takes them off the roster.</div>')
       + sect("alert", "Danger zone", "these cannot be undone",
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'
         + '<button class="btn danger" id="resetToday">' + M.icon("refresh") + "<span>Reset today’s habits</span></button>"
         + '<button class="btn danger" id="wipeAll">' + M.icon("trash") + "<span>Delete everything</span></button>"
         + "</div>")
+      + sect("play", "Setup", "gym name, trainer and starting data",
+        '<button class="btn" id="runSetup">' + M.icon("refresh") + "<span>Run the setup wizard again</span></button>")
       + sect("info", "About", "Momentum " + VERSION,
         '<div class="note">Personal discipline tracker + Gym Studio for trainers. Offline-first, installable, no server and no account.'
         + " Habit data, members, workouts and plans are stored in this browser under <b>" + M.KEY + "</b>.</div>")
@@ -224,11 +243,14 @@
 
     /* you */
     M.$("#setYou", host).innerHTML =
-      '<div class="grid2">' + M.f.text("name", "Your name", s.name) + M.f.sel("theme", "Theme", s.theme, [["dark", "Studio (dark)"], ["light", "Daylight (light)"]]) + "</div>"
+      '<div class="grid3">' + M.f.text("name", "Your name", s.name)
+      + M.f.sel("theme", "Theme", s.theme, [["dark", "Studio (dark)"], ["light", "Daylight (light)"]])
+      + M.f.sel("currency", "Currency", s.currency, [["₹", "₹ Rupee"], ["$", "$ Dollar"], ["£", "£ Pound"], ["€", "€ Euro"], ["AED ", "AED Dirham"]]) + "</div>"
       + '<button class="btn primary" id="saveYou" style="margin-top:6px">' + M.icon("check") + "<span>Save</span></button>";
     M.$("#saveYou", host).onclick = function () {
       var v = M.formVals(M.$("#setYou", host));
-      s.name = v.name || "You"; s.theme = v.theme; M.saveNow(); M.rerender(); M.toast("Saved", "ok");
+      s.name = v.name || "You"; s.theme = v.theme; s.currency = v.currency || "₹";
+      M.saveNow(); M.rerender(); M.toast("Saved", "ok");
     };
     /* gym */
     M.$("#setGym", host).innerHTML =
@@ -248,8 +270,22 @@
     };
     M.$("#expJson", host).onclick = function () {
       M.download(JSON.stringify(M.store, null, 2), "momentum-backup-" + M.today() + ".json", "application/json");
+      s.lastBackup = M.today(); M.saveNow();
       M.toast("Backup downloaded", "ok");
+      VIEWS.settings(host);
     };
+    M.on(host, "click", "[data-unarch]", function (e, t) {
+      G.restore(t.dataset.unarch); M.rerender(); M.toast("Member restored", "ok");
+    });
+    M.on(host, "click", "[data-purge]", function (e, t) {
+      var m = M.store.gym.members.filter(function (x) { return x.id === t.dataset.purge; })[0];
+      M.confirm("Delete " + (m ? m.name : "this member") + " permanently?",
+        "Their profile, attendance, workouts, weigh-ins and payments are removed for good.", "Delete permanently", true)
+        .then(function (ok) {
+          if (!ok) return;
+          G.remove(t.dataset.purge); M.rerender(); M.toast("Deleted permanently", "ok");
+        });
+    });
     M.$("#expCsv", host).onclick = function () {
       var A = H.active();
       var days = Object.keys(M.store.logs).concat(Object.keys(M.store.mind)).filter(function (v, i, a) { return a.indexOf(v) === i; }).sort();
@@ -289,10 +325,18 @@
     M.$("#impFile", host).onchange = function (e) {
       var f = e.target.files[0]; if (!f) return;
       var rd = new FileReader();
+      var merge = M.$("#impMerge", host) && M.$("#impMerge", host).checked;
       rd.onload = function () {
         try {
-          M.replaceStore(JSON.parse(rd.result));
-          M.rerender(); M.toast("Backup restored", "ok");
+          var obj = JSON.parse(rd.result);
+          if (merge) {
+            var added = M.mergeStore(obj);
+            M.rerender();
+            M.toast("Merged: " + added.members + " members, " + added.sessions + " sessions, " + added.days + " habit days", "ok");
+          } else {
+            M.replaceStore(obj);
+            M.rerender(); M.toast("Backup restored", "ok");
+          }
         } catch (err) { M.toast("That file could not be read", "no"); }
       };
       rd.readAsText(f);
@@ -330,6 +374,7 @@
         });
       });
     };
+    M.$("#runSetup", host).onclick = function () { M.onboard(true); };
     M.on(host, "click", "[data-restore]", function (e, t) {
       var h = H.byId(t.dataset.restore);
       if (h) { h.arch = false; M.save(); M.rerender(); M.toast("Habit restored", "ok"); }
@@ -374,10 +419,15 @@
     if (e.key === "g") M.go("#/grid");
     if (e.key === "i") M.go("#/insights");
     if (e.key === "m" && M.store.settings.modules.gym) M.go("#/members");
+    if (e.key === "/") {
+      var q = M.$("#qcin");
+      if (q) { e.preventDefault(); q.focus(); }
+      else if (M.store.settings.modules.gym) M.go("#/gym");
+    }
     if (e.key === "?") M.modal({
       title: "Keyboard shortcuts", narrow: true,
       body: '<div class="rows">'
-        + ["t · Today", "g · Habit grid", "i · Insights", "m · Members", "Esc · close dialogs"].map(function (x) {
+        + ["t · Today", "g · Habit grid", "i · Insights", "m · Members", "/ · Quick check-in", "Esc · close dialogs"].map(function (x) {
           return '<div class="row"><span class="nm">' + x + "</span></div>";
         }).join("") + "</div>"
     });
@@ -411,12 +461,84 @@
   });
 
   /* ============================================================
+     first-run setup
+     ============================================================ */
+  M.onboard = function (force) {
+    var s = M.store.settings, gp = M.store.gym.profile;
+    if (s.onboarded && !force) return;
+    var body =
+      '<div class="stack">'
+      + '<div class="note in">' + M.icon("info")
+      + " Everything stays on this device — no account, no server. Two minutes here makes the plans and WhatsApp messages come out branded."
+      + "</div>"
+      + '<div class="grid2">' + M.f.text("name", "Your name", s.name === "You" ? "" : s.name, { ph: "as clients should see it", req: true })
+      + M.f.sel("currency", "Currency", s.currency, [["₹", "₹ Rupee"], ["$", "$ Dollar"], ["£", "£ Pound"], ["€", "€ Euro"], ["AED ", "AED Dirham"]]) + "</div>"
+      + '<div class="grid2">' + M.f.text("gname", "Gym / studio name", gp.name, { ph: "e.g. Iron Yard Fitness" })
+      + M.f.text("gphone", "Contact number", gp.phone, { ph: "shown on receipts" }) + "</div>"
+      + M.f.sel("theme", "Look", s.theme, [["dark", "Studio (dark)"], ["light", "Daylight (light)"]])
+      + '<div class="note">Leave the gym fields empty if you only want the personal habit tracker — you can switch Gym Studio off in Settings.</div>'
+      + "</div>";
+    function apply(b) {
+      var v = M.formVals(b);
+      s.name = v.name || "You";
+      s.currency = v.currency || "₹";
+      s.theme = v.theme;
+      gp.name = v.gname || "";
+      gp.phone = v.gphone || "";
+      if (!gp.trainer) gp.trainer = s.name;
+      s.onboarded = true;
+      M.saveNow();
+    }
+    M.modal({
+      title: "Welcome to Momentum", wide: true,
+      sub: "A discipline tracker for you, and a full studio for the gym floor.",
+      body: body,
+      footer: [
+        {
+          label: "Start empty", cls: "ghost", fn: function (b) {
+            apply(b); M.closeModal(); M.go("#/today"); M.rerender();
+          }
+        },
+        {
+          label: "Load a demo gym", cls: "primary", icon: "layers", fn: function (b) {
+            apply(b);
+            if (M.hasDemo()) M.clearDemo();
+            M.seedDemo();
+            M.closeModal(); M.go("#/gym"); M.rerender();
+            M.toast("Demo gym loaded — remove it any time from Settings", "ok");
+          }
+        }
+      ]
+    });
+  };
+  function backupAge() {
+    var lb = M.store.settings.lastBackup;
+    if (!lb) return 999;
+    return M.dayDiff(lb, new Date());
+  }
+  M.backupAge = backupAge;
+  function backupNag() {
+    var hasData = Object.keys(M.store.logs).length > 5 || G.all().length > 0;
+    if (!hasData || backupAge() <= 7) return;
+    setTimeout(function () {
+      M.toast("No backup in " + (M.store.settings.lastBackup ? backupAge() + " days" : "a while") + " — keep one safe copy", "no", "Back up now", function () {
+        M.download(JSON.stringify(M.store, null, 2), "momentum-backup-" + M.today() + ".json", "application/json");
+        M.store.settings.lastBackup = M.today();
+        M.saveNow();
+        M.toast("Backup downloaded", "ok");
+      });
+    }, 2600);
+  }
+
+  /* ============================================================
      boot
      ============================================================ */
   w.addEventListener("hashchange", function () { render(parse()); });
   if (!location.hash) location.hash = M.store.settings.route || "#/today";
   render(parse());
   if (M.store.settings.pin) M.showLock();
+  else if (!M.store.settings.onboarded) M.onboard();
+  else backupNag();
   w.addEventListener("beforeunload", M.saveNow);
   var lastDay = M.today();
   setInterval(function () {

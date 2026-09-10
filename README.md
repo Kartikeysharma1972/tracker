@@ -34,14 +34,16 @@ Per-habit colour, emoji, weekly goal, streaks, archive/restore.
 
 | View | What it does |
 | --- | --- |
-| **Overview** | Active members, check-ins today, weekly attendance vs plan, collection vs expected, pending fees, at-risk members (7+ days absent, with a WhatsApp nudge), PRs this week, 14-day check-in chart, goal mix, gym tonnage, muscle groups trained |
+| **Overview** | **Quick check-in** (type three letters, press Enter — press `/` from anywhere to jump there), today's floor grouped by **batch / slot**, active members, check-ins today, weekly attendance vs plan, collection vs expected, pending fees, renewals due, at-risk members (7+ days absent, with a WhatsApp nudge), PRs this week, 14-day check-in chart, goal mix, gym tonnage, muscle groups trained |
 | **Members** | Card or table roster with search and filters (status, goal, level, sort). One-tap check-in, quick log, WhatsApp |
-| **Member profile** | Weight chart against target, BMI, body fat (US Navy), lean mass, weekly rate-of-change with a too-fast/too-slow flag, attendance history and streak, this week's sets per muscle vs last week, "not trained this week" gaps, last session with per-set detail and progressive-overload suggestions, PR table (best e1RM per lift), 10-week volume trend, assigned programme, nutrition targets, measurement history with deltas, fees and payment history, medical notes. Printable as a client report |
+| **Member profile** | Weight chart against target, **goal ETA** ("at this rate, 80 kg by 12 Nov" — or a stalled / going-the-wrong-way warning), BMI, body fat (US Navy), lean mass, weekly rate-of-change flags, attendance history and streak, this week's sets per muscle vs last week, "not trained this week" gaps, last session with per-set detail and progressive-overload suggestions, **per-exercise progress chart** (load and estimated 1RM over time), PR table, 10-week volume trend, assigned programme, nutrition targets, measurement history with deltas, **dated session notes**, fees and payment history, medical notes |
 | **Workout log** | Pick member → date → focus, build the session from a 130-movement library (search + filter), sets × weight × reps with live e1RM, auto-fill from their programme, repeat last session, per-exercise overload suggestion. Saving a session also marks attendance |
 | **Attendance** | Month × member check-in board, click any cell, per-member totals |
 | **Programmes** | Generates a split from days/week + level + goal (full body, upper/lower, PPL, 6-day PPL), with sets, rep ranges, rest, warm-ups, finishers, cardio prescription and progression rules. Send over WhatsApp or print |
 | **Diet planner** | See below |
-| **Payments** | Collection trend, expected vs collected, dues and overdue list, payment history, CSV export |
+| **Payments** | Collection trend, expected vs collected, dues and overdue list, renewals due in the next 14 days, numbered receipts (print or WhatsApp), payment history, CSV export |
+| **Business report** | Month-on-month revenue, new joins vs leavers, churn %, attendance rate, retention, sessions and tonnage, goal and experience mix, leaderboards for consistency / volume / lifetime value, CSV export |
+| **Client report** | A brandable, printable one-pager per member — gym name and contact, snapshot, body composition with goal ETA, weight trend, 8-week attendance, strength records, training plan, nutrition targets with a day of meals, and coach notes. Print to PDF or send a WhatsApp summary |
 
 ### Diet plan generator
 
@@ -62,10 +64,17 @@ per day, training days, allergies.
    in testing, within **~2% of the calorie target on average** and **≥95% of the protein target**.
 5. **Output** — per-meal tables with quantities and macros, day totals against target, hydration
    and fibre, level-specific coach notes, supplement guidance (food first), swap any item for
-   another in the same column, then send on WhatsApp, copy, export CSV or print.
+   another in the same column, a **weekly shopping list** (the whole plan added up and grouped by
+   aisle, in kg / litres where that reads better), then send on WhatsApp, copy, export CSV or print.
 
 Protein powders are never used to anchor a normal meal — only in the shake window, or when whole
 food genuinely cannot reach the target (which the plan then says out loud).
+
+## First run
+
+A setup wizard asks for your name, gym name, contact number and currency (₹ / $ / £ / € / AED),
+then offers to start empty or load a demo gym. Everything it collects is used to brand plans,
+receipts and WhatsApp messages. Re-run it any time from Settings → Setup.
 
 ## Demo data
 
@@ -73,10 +82,17 @@ Settings → *Load demo gym* creates 12 fictional members with 10 weeks of atten
 weigh-ins and payments — enough to demo the whole product. *Remove demo members* cleans it out and
 leaves real members untouched.
 
-## Backups
+## Safety net
 
-Settings → full JSON backup, plus CSV exports for habits + mood, members, workouts and payments.
-Clearing browser data deletes everything, so keep a backup.
+* Settings → full JSON backup, plus CSV exports for habits + mood, members, workouts, payments
+  and the business report.
+* **Import can merge** instead of replacing — new members, sessions, payments and habit days are
+  added and existing ones left alone, so an old backup is safe to import on a newer device.
+* The app tracks the last backup date and nudges you when it is over a week old.
+* Members are **archived, not deleted** — they leave the roster but every workout, weigh-in and
+  payment is kept; Settings → Archived members can restore or permanently delete them.
+* Duplicate phone numbers are refused when adding a member.
+* Clearing browser data still deletes everything, so keep one downloaded copy.
 
 ## Structure
 
@@ -96,7 +112,8 @@ assets/js/ui.js            toast, modal, drawer, form helpers
 assets/js/habits.js        Today / Grid / Insights
 assets/js/gym.js           Overview / Members / Member profile
 assets/js/gym-log.js       Workout logger / Attendance / Programmes / Payments
-assets/js/diet.js          Diet planner
+assets/js/diet.js          Diet planner + weekly shopping list
+assets/js/report.js        Client report, receipts, business report
 assets/js/app.js           router, nav, KPI strip, settings, PIN lock
 sw.js                      service worker (network-first for code)
 ```
@@ -105,4 +122,4 @@ Vanilla HTML, CSS and JavaScript. No dependencies, no build step.
 
 ## Keyboard
 
-`t` Today · `g` Habit grid · `i` Insights · `m` Members · `?` shortcuts · `Esc` close dialogs
+`t` Today · `g` Habit grid · `i` Insights · `m` Members · `/` quick check-in · `?` shortcuts · `Esc` closes dialogs
